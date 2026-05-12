@@ -2,6 +2,8 @@
 
 원본 [semble](https://github.com/MinishLab/semble) (Python)을 Rust로 재작성하고, 의존성 분석 기능을 추가한 프로젝트.
 
+**한글 검색 지원** — BM25 토크나이저가 유니코드(`\p{L}`)를 지원하여 한글 주석, 문서, 변수명도 키워드 검색 가능. 원본은 ASCII만 인식.
+
 ## 원본 semble이란
 
 MinishLab이 만든 AI 에이전트용 코드 검색 라이브러리. 에이전트가 `grep` + `read`로 파일을 하나씩 읽는 대신, 자연어 쿼리 한 줄로 관련 코드 스니펫만 반환합니다.
