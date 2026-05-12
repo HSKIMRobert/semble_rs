@@ -1,7 +1,8 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-static TOKEN_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[a-zA-Z_][a-zA-Z0-9_]*").unwrap());
+static TOKEN_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"[\p{L}_][\p{L}\p{N}_]*").unwrap());
 
 fn split_camel_case(token: &str) -> Vec<String> {
     let chars: Vec<char> = token.chars().collect();
@@ -95,5 +96,22 @@ mod tests {
         assert!(tokens.contains(&"getfoo".to_string()));
         assert!(tokens.contains(&"get".to_string()));
         assert!(tokens.contains(&"foo".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_korean() {
+        let tokens = tokenize("의존성 그래프 구축");
+        assert!(tokens.contains(&"의존성".to_string()));
+        assert!(tokens.contains(&"그래프".to_string()));
+        assert!(tokens.contains(&"구축".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_mixed_korean_english() {
+        let tokens = tokenize("Tree-sitter AST 기반 청킹");
+        assert!(tokens.contains(&"tree".to_string()));
+        assert!(tokens.contains(&"sitter".to_string()));
+        assert!(tokens.contains(&"기반".to_string()));
+        assert!(tokens.contains(&"청킹".to_string()));
     }
 }
