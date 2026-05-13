@@ -2,7 +2,7 @@ use std::process;
 
 use clap::{Parser, Subcommand};
 
-use semble::filter::strip_comments;
+use semble::filter::smart_strip;
 use semble::index::SembleIndex;
 use semble::stats::format_savings_report;
 use semble::types::SearchResult;
@@ -245,9 +245,18 @@ fn print_compact(results: &[SearchResult]) {
             r.score, r.chunk.file_path, r.chunk.start_line, r.chunk.end_line
         );
         for ml in &r.match_lines {
-            println!("  L{}:\t{}", ml.line, ml.content);
+            println!("  L{}:\t{}", ml.line, truncate_line(&ml.content, 120));
         }
     }
+}
+
+fn truncate_line(line: &str, max_len: usize) -> String {
+    let trimmed = line.trim();
+    if trimmed.len() <= max_len {
+        return trimmed.to_string();
+    }
+    let s: String = trimmed.chars().take(max_len - 3).collect();
+    format!("{s}...")
 }
 
 fn print_json_stripped(results: &[SearchResult]) {
@@ -257,7 +266,7 @@ fn print_json_stripped(results: &[SearchResult]) {
             let lang = r.chunk.language.as_deref();
             SearchResult {
                 chunk: semble::types::Chunk::new(
-                    strip_comments(&r.chunk.content, lang),
+                    smart_strip(&r.chunk.content, lang),
                     r.chunk.file_path.clone(),
                     r.chunk.start_line,
                     r.chunk.end_line,

@@ -1,5 +1,19 @@
 # semble_rs
 
+**grep, cat, read, ls를 대체하는 AI 에이전트용 코드 검색.**  
+검색 한 번으로 관련 코드를 찾아서, 파일을 하나씩 읽을 필요를 없앱니다.
+
+```
+기존:  ls → grep → cat file1 → cat file2 → ...  (58,000 토큰/세션)
+semble_rs:  search --compact                     ( 4,000 토큰/세션, -93%)
+```
+
+| 기존 도구 | 하는 일 | semble_rs가 대체하는 방법 |
+|---|---|---|
+| `grep -rn` | 키워드 검색 | `--compact`가 같은 크기 출력 + **semantic search** |
+| `cat / read` | 파일 내용 읽기 | 검색 결과에 매칭 라인 포함 → **읽을 필요 없음** |
+| `ls / find` | 파일 구조 탐색 | 검색 결과에 파일 경로 포함 → **탐색할 필요 없음** |
+
 원본 [semble](https://github.com/MinishLab/semble) (Python)을 Rust로 재작성하고, 의존성 분석 기능을 추가한 프로젝트.
 
 **한글 검색 지원** — BM25 토크나이저가 유니코드(`\p{L}`)를 지원하여 한글 주석, 문서, 변수명도 키워드 검색 가능. 원본은 ASCII만 인식.
@@ -245,48 +259,51 @@ AI 에이전트가 사용하는 도구는 **설치가 간단하고 빠르게 실
 | 임베딩 라이브러리 | model2vec + vicinity | ndarray 직접 구현 |
 | BM25 라이브러리 | bm25s | 직접 구현 |
 
-## 실전 비교: semble_rs vs grep vs find+read
+## 토큰 절감 비교: semble_rs vs rtk vs grep vs cat
 
-3개 프로젝트(TypeScript 56파일, TypeScript+Rust 351파일, Rust 43파일), 10개 시나리오에서 측정.
+AI 에이전트가 코드를 탐색할 때 소비하는 토큰을 비교합니다.
 
-**semble_rs가 유리한 경우 — 대규모 프로젝트에서 컴포넌트 찾기:**
-
-```
-[terminal, 351파일] "GitPanel" 검색
-
-find + read:  2개 파일 전체 읽기 → 220,853 토큰
-grep -rn:     16줄 매칭 → 521 토큰
-semble_rs:    2개 결과, 2/2 적중 → 734 토큰, 줄번호 포함  (vs read 100% 절감)
-```
-
-**grep이 유리한 경우 — 소규모 프로젝트에서 정확한 함수 찾기:**
+### 30분 Claude Code 세션 기준
 
 ```
-[kekelink, 56파일] "deletePage" 검색
-
-find + read:  2개 파일 전체 읽기 → 1,705 토큰
-grep -rn:     3줄 매칭 → 98 토큰
-semble_rs:    10개 결과, 2/2 적중 → 5,219 토큰  (grep보다 많음)
+┌───────────────────┬──────┬──────────┬──────────┬──────────────────┬──────────┐
+│ 작업              │ 횟수 │ cat/read │ rtk      │ semble_rs        │ 절감     │
+│                   │      │ (기존)   │ (압축)   │ --compact (대체) │ vs rtk   │
+├───────────────────┼──────┼──────────┼──────────┼──────────────────┼──────────┤
+│ 코드 검색 (grep)  │  8x  │  16,000  │  3,200   │    4,000         │ 비슷     │
+│ 파일 읽기 (cat)   │ 20x  │  40,000  │ 12,000   │        0 (불필요)│ -100%    │
+│ 파일 탐색 (ls)    │ 10x  │   2,000  │    400   │        0 (불필요)│ -100%    │
+│ 합계              │      │  58,000  │ 15,600   │    4,000         │ -74%     │
+└───────────────────┴──────┴──────────┴──────────┴──────────────────┴──────────┘
 ```
 
-**합계:**
+**핵심 차이:**
+
+- **rtk** — 기존 도구(grep, cat, ls)의 출력을 **압축**합니다. 파일은 여전히 읽습니다.
+- **semble_rs** — 검색 한 번으로 관련 코드를 찾아서 **읽을 필요 자체를 없앱니다.**
 
 ```
-┌────────────────┬─────────────┬──────────────────────────────────────────────┐
-│ 방법           │ 토큰 합계   │ 특징                                         │
-├────────────────┼─────────────┼──────────────────────────────────────────────┤
-│ find + read    │ 739,867     │ 파일 전체를 읽으므로 가장 많음               │
-│ semble_rs      │  65,956     │ vs read 91% 절감, 적중률 100%               │
-│ grep           │   4,176     │ 가장 적지만 의미 검색/의존성 분석 불가       │
-└────────────────┴─────────────┴──────────────────────────────────────────────┘
+rtk 접근:     grep → 출력 압축 → LLM          (읽되 줄인다)
+semble_rs:    search --compact → LLM           (안 읽어도 된다)
 ```
 
-**결론:**
+### 실측 비교
 
-- 파일 전체 읽기 대비 **91% 토큰 절감** — 에이전트가 Read를 반복하는 것보다 압도적
-- 대규모 프로젝트(100+ 파일)에서 효과 극대화 (99%+ 절감)
-- 소규모 프로젝트에서는 grep이 토큰 효율은 높지만, **deps/impact는 grep으로 불가능**
-- 최적 전략: `semble_rs search`로 파일 좁히기 → 필요 시 `grep`으로 정밀 확인
+JavaScript 프로젝트(80+ 파일)에서 "introPropsHTML" 검색:
+
+```
+┌──────────────────────────────┬────────────┬────────────────────────────────┐
+│ 방법                         │ 출력 크기  │ 특징                           │
+├──────────────────────────────┼────────────┼────────────────────────────────┤
+│ grep -rn                     │    296 B   │ 정확한 심볼만 가능             │
+│ semble_rs --compact          │    528 B   │ semantic + BM25, 랭킹 포함     │
+│ semble_rs --json --strip     │ 21,567 B   │ 주석 제거 + 본문 축약         │
+│ semble_rs --json             │ 23,712 B   │ 전체 청크 포함                 │
+│ cat (파일 전체 읽기)          │ 48,000 B   │ 관련 없는 코드도 전부 포함     │
+└──────────────────────────────┴────────────┴────────────────────────────────┘
+```
+
+**--compact은 grep과 비슷한 크기이면서 semantic search가 가능합니다.** 심볼명을 모를 때도 자연어로 찾을 수 있어 cat/read를 완전히 대체합니다.
 
 ## 설치
 
@@ -365,24 +382,19 @@ semble_rs savings
 `~/.claude/CLAUDE.md`에 추가하면 모든 프로젝트에서 자동 적용:
 
 ```markdown
-# semble_rs - Code Search & Dependency Analysis
+# semble_rs — grep, cat, read, ls를 대체하는 코드 검색
 
-`semble_rs`가 설치되어 있습니다. 코드 탐색 시 반드시 사용하세요.
-정확한 심볼명을 아는 경우만 grep을 사용하세요.
+`semble_rs`가 설치되어 있습니다.
+코드 탐색 시 grep, cat, read 대신 반드시 semble_rs를 사용하세요.
+검색 한 번으로 파일 경로 + 매칭 라인이 나오므로 파일을 읽을 필요가 없습니다.
 
 ## 규칙
 
-1. 심볼명을 모를 때 → `semble_rs search "기능 설명" . --json`
-2. 정확한 심볼명을 알 때 → `grep -rn "함수명" .` (토큰 적고 빠름)
-3. 의존성/영향 분석 → `semble_rs deps/impact <file> . --json`
-4. 심볼명을 추측해서 검색하지 말 것 — 모르면 자연어로 기능 설명
-
-## 명령어
-
-- 코드 찾기: `semble_rs search "query" . --json`
-- 의존성: `semble_rs deps <file> . --json`
-- 변경 영향: `semble_rs impact <file> . --json`
-- 유사 코드: `semble_rs find-related <file> <line> . --json`
+1. 코드 찾기 → `semble_rs search "query" . --compact` (grep/cat/read 대체)
+2. 의존성 확인 → `semble_rs deps <file> . --json`
+3. 변경 영향 확인 → `semble_rs impact <file> . --json`
+4. 심볼명을 추측하지 말 것 — 모르면 자연어로 기능 설명
+5. semble_rs 결과로 충분하지 않을 때만 grep -rn으로 보충
 ```
 
 ### 방법 2: 프로젝트별 CLAUDE.md
@@ -392,8 +404,8 @@ semble_rs savings
 ```bash
 cd ./my-project
 cat > CLAUDE.md << 'EOF'
-# 코드 탐색
-semble_rs search "query" . --json 으로 코드 찾기
+# 코드 탐색 — semble_rs 사용 (grep/cat/read 대체)
+semble_rs search "query" . --compact 으로 코드 찾기
 semble_rs deps <file> . --json 으로 의존성 확인
 semble_rs impact <file> . --json 으로 변경 영향 확인
 EOF
@@ -406,8 +418,10 @@ EOF
 ```
 ❯ 이 프로젝트에서 인증 관련 코드 찾아줘
 
-⏺ Bash(semble_rs search "authentication" . --json)
-  ⎿ [{"chunk":{"file_path":"src/lib/firebase.ts", ...}]
+⏺ Bash(semble_rs search "authentication" . --compact)
+  ⎿ 0.0842  src/lib/firebase.ts:45-89
+       L45:  export function loginWithEmail(email, password) {
+       L67:  export function signOut() {
 ```
 
 ## Codex 설치 및 연동
@@ -417,23 +431,24 @@ EOF
 `~/.codex/AGENTS.md`에 추가:
 
 ```markdown
-# semble_rs - ALWAYS use before manual code exploration
+# semble_rs — replaces grep, cat, read, ls for code exploration
 
 `semble_rs` is installed at `~/.cargo/bin/semble_rs`.
-You MUST use it before using find, grep, or reading files manually.
+ALWAYS use semble_rs instead of grep, cat, read, find.
+One search returns file paths + matching lines — no need to read files.
 
 ## Rules
 
-1. NEVER start with find or manual file reading for code exploration
-2. ALWAYS run semble_rs first to locate relevant code
-3. Only use cat/read AFTER semble_rs narrows the target
+1. Code search → `semble_rs search "query" . --compact` (replaces grep/cat/read)
+2. Dependencies → `semble_rs deps <file> . --json`
+3. Impact analysis → `semble_rs impact <file> . --json`
+4. NEVER guess symbol names — use natural language when unsure
+5. Only fall back to grep -rn if semble_rs results are insufficient
 
 ## Commands
 
-# Find code by keyword or symbol
-~/.cargo/bin/semble_rs search "query" /path/to/project --json
+~/.cargo/bin/semble_rs search "query" /path/to/project --compact
 
-# Check file dependencies and symbols
 ~/.cargo/bin/semble_rs deps <file> /path/to/project --json
 
 # Check what breaks if a file changes

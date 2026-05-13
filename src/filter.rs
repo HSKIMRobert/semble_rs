@@ -3,6 +3,16 @@ use regex::Regex;
 
 static MULTIPLE_BLANK_LINES: Lazy<Regex> = Lazy::new(|| Regex::new(r"\n{3,}").unwrap());
 
+static FUNC_SIGNATURE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"^(?:pub\s+)?(?:async\s+)?(?:fn|def|function|func|class|struct|enum|trait|interface|type|export)\s+\w+"
+    ).unwrap()
+});
+
+static IMPORT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(?:use |import |from |require\(|#include |const \{|module )").unwrap()
+});
+
 pub fn strip_comments(content: &str, lang: Option<&str>) -> String {
     let patterns = CommentSyntax::from_lang(lang);
     let mut result = String::with_capacity(content.len());
@@ -40,6 +50,69 @@ pub fn strip_comments(content: &str, lang: Option<&str>) -> String {
 
     let result = MULTIPLE_BLANK_LINES.replace_all(&result, "\n\n");
     result.trim().to_string()
+}
+
+pub fn smart_strip(content: &str, lang: Option<&str>) -> String {
+    let stripped = strip_comments(content, lang);
+    smart_truncate(&stripped)
+}
+
+fn smart_truncate(content: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut result = Vec::with_capacity(lines.len());
+    let mut brace_depth: i32 = 0;
+    let mut in_body = false;
+    let mut skipped = 0usize;
+
+    for line in &lines {
+        let trimmed = line.trim();
+
+        if IMPORT_PATTERN.is_match(trimmed) {
+            flush_skipped(&mut result, &mut skipped);
+            result.push((*line).to_string());
+            continue;
+        }
+
+        if FUNC_SIGNATURE.is_match(trimmed) {
+            flush_skipped(&mut result, &mut skipped);
+            result.push((*line).to_string());
+            in_body = true;
+            brace_depth = 0;
+            continue;
+        }
+
+        if in_body {
+            let open = trimmed.matches('{').count() as i32;
+            let close = trimmed.matches('}').count() as i32;
+            brace_depth += open - close;
+
+            if trimmed == "{" || trimmed == "}" || trimmed.ends_with('{') {
+                flush_skipped(&mut result, &mut skipped);
+                result.push((*line).to_string());
+            } else {
+                skipped += 1;
+            }
+
+            if brace_depth <= 0 {
+                in_body = false;
+                flush_skipped(&mut result, &mut skipped);
+            }
+            continue;
+        }
+
+        flush_skipped(&mut result, &mut skipped);
+        result.push((*line).to_string());
+    }
+
+    flush_skipped(&mut result, &mut skipped);
+    result.join("\n")
+}
+
+fn flush_skipped(result: &mut Vec<String>, skipped: &mut usize) {
+    if *skipped > 0 {
+        result.push(format!("    [... {} lines]", skipped));
+        *skipped = 0;
+    }
 }
 
 struct CommentSyntax {
@@ -114,5 +187,23 @@ mod tests {
         let code = "a\n\n\n\n\nb\n";
         let result = strip_comments(code, None);
         assert!(!result.contains("\n\n\n"));
+    }
+
+    #[test]
+    fn test_smart_strip_keeps_signatures() {
+        let code = "// comment\nfn main() {\n    let x = 1;\n    let y = 2;\n    println!(x + y);\n}\n";
+        let result = smart_strip(code, Some("rust"));
+        assert!(result.contains("fn main()"));
+        assert!(result.contains("[..."));
+        assert!(!result.contains("let x"));
+    }
+
+    #[test]
+    fn test_smart_strip_keeps_imports() {
+        let code = "use std::io;\nimport foo from 'bar';\nfn main() {\n    body();\n}\n";
+        let result = smart_strip(code, Some("rust"));
+        assert!(result.contains("use std::io;"));
+        assert!(result.contains("import foo"));
+        assert!(result.contains("fn main()"));
     }
 }
