@@ -355,12 +355,28 @@ semble_rs search "titleCardPropsHTML" .       # 존재하지 않는 이름 → 0
 
 존재하지 않는 심볼명은 BM25에서 정확히 매칭되지 않고, 임베딩도 실제 코드와 거리가 멀어 점수가 낮습니다. **모르면 추측하지 말고, 자연어로 기능을 설명하세요.**
 
+### 흔한 실수
+
+```bash
+# ❌ 파일 경로를 넘기면 에러 — 프로젝트 디렉토리를 넘겨야 합니다
+semble_rs search "query" /path/to/Billing.tsx --json
+
+# ❌ --json은 토큰이 50배 많음 — --compact를 쓰세요
+semble_rs search "query" ./my-project --json
+
+# ❌ python으로 파이프 — --compact면 결과가 이미 간결합니다
+semble_rs search "query" . --json | python3 -c "..."
+
+# ✅ 올바른 사용
+semble_rs search "query" ./my-project --compact
+```
+
 ## 사용법
 
 ```bash
-# 코드 검색 — 관련 파일 + 정확한 줄번호 반환
-semble_rs search "deletePage" ./my-project
-semble_rs search "handleImageUpload" ./my-project --json
+# 코드 검색 — 관련 파일 + 정확한 줄번호 반환 (--compact 권장)
+semble_rs search "deletePage" ./my-project --compact
+semble_rs search "handleImageUpload" ./my-project --compact
 
 # 의존성 확인 — 심볼, 의존 파일, 사용처
 semble_rs deps src/lib/firestore.ts ./my-project
