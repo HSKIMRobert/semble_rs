@@ -2,6 +2,7 @@ pub mod bm25;
 pub mod chunking;
 pub mod encoder;
 pub mod file_walker;
+pub mod filter;
 pub mod graph;
 pub mod index;
 pub mod ranking;

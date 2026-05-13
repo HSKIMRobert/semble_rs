@@ -2,6 +2,7 @@ use std::process;
 
 use clap::{Parser, Subcommand};
 
+use semble::filter::strip_comments;
 use semble::index::SembleIndex;
 use semble::stats::format_savings_report;
 use semble::types::SearchResult;
@@ -32,6 +33,12 @@ enum Commands {
         /// Output as JSON (for agent/tool integration)
         #[arg(long)]
         json: bool,
+        /// Compact output: file paths, scores, and match lines only (minimal tokens)
+        #[arg(long)]
+        compact: bool,
+        /// Strip comments from code chunks in JSON output to reduce tokens
+        #[arg(long)]
+        strip: bool,
     },
     /// Find code similar to a specific location
     FindRelated {
@@ -171,11 +178,17 @@ fn main() {
             top_k,
             include_text_files,
             json,
+            compact,
+            strip,
         } => {
             let index = build_index(&path, include_text_files);
 
             let results = index.search(query.as_str(), top_k, None, None, None);
-            if json {
+            if compact {
+                print_compact(&results);
+            } else if json && strip {
+                print_json_stripped(&results);
+            } else if json {
                 print_json(&results);
             } else if results.is_empty() {
                 println!("No results found.");
@@ -223,6 +236,39 @@ fn main() {
             }
         }
     }
+}
+
+fn print_compact(results: &[SearchResult]) {
+    for r in results {
+        println!(
+            "{:.4}\t{}:{}-{}",
+            r.score, r.chunk.file_path, r.chunk.start_line, r.chunk.end_line
+        );
+        for ml in &r.match_lines {
+            println!("  L{}:\t{}", ml.line, ml.content);
+        }
+    }
+}
+
+fn print_json_stripped(results: &[SearchResult]) {
+    let stripped: Vec<SearchResult> = results
+        .iter()
+        .map(|r| {
+            let lang = r.chunk.language.as_deref();
+            SearchResult {
+                chunk: semble::types::Chunk::new(
+                    strip_comments(&r.chunk.content, lang),
+                    r.chunk.file_path.clone(),
+                    r.chunk.start_line,
+                    r.chunk.end_line,
+                    r.chunk.language.clone(),
+                ),
+                score: r.score,
+                match_lines: r.match_lines.clone(),
+            }
+        })
+        .collect();
+    println!("{}", serde_json::to_string(&stripped).unwrap_or_else(|_| "[]".to_string()));
 }
 
 fn print_json(results: &[SearchResult]) {
