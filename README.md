@@ -437,6 +437,16 @@ semble_rs savings
 2. 필요한 청크 식별 후 **`--compact`로 좁혀 탐색** — 매칭 라인 컨텍스트 확인
 3. 본문 자체가 필요하면 **`--json --strip`**
 
+### 실험용 모델 교체 (v0.3.0+)
+
+기본 임베딩 모델(`potion-code-16M`)은 코드 검색 + 한글 BM25 hybrid에서 이미 강합니다 — 자체 50쿼리 ground-truth 평가 결과 R@5 **98%**, R@10 **100%**, 한글 R@5 **80%**. 다른 임베딩 모델을 시도하고 싶다면 `SEMBLE_MODEL_PATH` 환경변수로 로컬 model2vec 산출 디렉토리(`tokenizer.json` + `model.safetensors` 필요)를 지정할 수 있습니다.
+
+```bash
+SEMBLE_MODEL_PATH=/path/to/my-distilled-model semble_rs search "query" ./my-project --compact
+```
+
+CoIR 코드 검색 벤치마크 상위 모델(SFR-Embedding-Code-2B_R 67.4, CodeSage-large-v2 64.2, CodeRankEmbed 60.1) 중 어느 것을 teacher로 [model2vec](https://github.com/MinishLab/model2vec)으로 distill해도 됩니다. 자체 평가셋으로 확인 후 baseline을 이기면 채택하세요.
+
 ## Claude Code / Codex Integration
 
 ### Option 1: Global CLAUDE.md
@@ -924,6 +934,16 @@ Recommended workflow:
 1. **Start with `--outline`** — get the structural overview
 2. After picking targets, **narrow down with `--compact`** for matching-line context
 3. If the body itself is required, use **`--json --strip`**
+
+### Experimental: swap the embedding model (v0.3.0+)
+
+The default embedding model (`potion-code-16M`) is already strong for code search + Korean BM25 hybrid — our 50-query ground-truth eval shows R@5 **98%**, R@10 **100%**, Korean R@5 **80%**. To experiment with a different model, point `SEMBLE_MODEL_PATH` at a local [model2vec](https://github.com/MinishLab/model2vec) output directory containing `tokenizer.json` + `model.safetensors`:
+
+```bash
+SEMBLE_MODEL_PATH=/path/to/my-distilled-model semble_rs search "query" ./my-project --compact
+```
+
+Top open-source code retrieval teachers on the CoIR benchmark — `Salesforce/SFR-Embedding-Code-2B_R` (67.4), `CodeSage-large-v2` (64.2), `nomic-ai/CodeRankEmbed` (60.1, the teacher already used for our default) — can all be distilled with model2vec. Always validate against your own eval set before adopting; in our testing, a distilled `SFR-Embedding-Code-400M_R` underperformed the default (R@10 96% vs 100%, Korean R@5 40% vs 80%) because its vocabulary is English-code-only and shrinks the BM25 + semantic synergy. Choose teachers whose vocab covers your real corpus.
 
 ### Integration with Claude Code, Codex, Cursor, Aider, OpenHands
 

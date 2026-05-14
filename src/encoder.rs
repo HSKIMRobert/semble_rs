@@ -14,6 +14,18 @@ pub struct StaticEncoder {
 
 impl StaticEncoder {
     pub fn load(model_name: Option<&str>) -> Result<Self> {
+        if let Ok(local) = std::env::var("SEMBLE_MODEL_PATH") {
+            let dir = PathBuf::from(&local);
+            let tok = dir.join("tokenizer.json");
+            let model = dir.join("model.safetensors");
+            if !tok.exists() {
+                bail!("SEMBLE_MODEL_PATH does not contain tokenizer.json: {tok:?}");
+            }
+            if !model.exists() {
+                bail!("SEMBLE_MODEL_PATH does not contain model.safetensors: {model:?}");
+            }
+            return Self::from_files(&tok, &model);
+        }
         let name = model_name.unwrap_or(DEFAULT_MODEL_NAME);
         let api = hf_hub::api::sync::Api::new().context("Failed to create HuggingFace Hub API")?;
         let repo = api.model(name.to_string());
