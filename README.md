@@ -169,7 +169,7 @@ Use **`ripgrep`** when you have the exact symbol and just want to list call site
 | Java | ✓ | ✓ | ✓ |
 | C / C++ | ✓ | ✓ | ✓ |
 | **Kotlin** (v0.3.0+) | ✓ | ✓ | ✓ |
-| **Ruby, PHP, Swift** (v0.7.0+) | ✓ | ✓ | — |
+| **Ruby, PHP, Swift** (v0.8.0+) | ✓ | ✓ | ✓ |
 | Other code files (HTML, CSS, SCSS, Vue, Svelte, ...) | ✓ | line-based fallback | — |
 
 ## Integration with AI coding agents

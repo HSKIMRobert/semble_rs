@@ -1,6 +1,6 @@
 [package]
 name = "semble"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 description = "Fast, accurate, AI-agent-native code search in Rust — hybrid BM25 + semantic search, Tree-sitter AST chunking, dependency & impact analysis. A drop-in replacement for grep/cat/read/ls in Claude Code, Codex, Cursor, Aider, and OpenHands agent sessions."
 license = "MIT"

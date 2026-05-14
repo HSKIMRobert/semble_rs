@@ -149,7 +149,7 @@ semble_rs digest --show-format my_log.txt
 | Java | ✓ | ✓ | ✓ |
 | C / C++ | ✓ | ✓ | ✓ |
 | **Kotlin** (v0.3.0+) | ✓ | ✓ | ✓ |
-| **Ruby, PHP, Swift** (v0.7.0+) | ✓ | ✓ | — |
+| **Ruby, PHP, Swift** (v0.8.0+) | ✓ | ✓ | ✓ |
 | 기타 (HTML, CSS, SCSS, Vue, Svelte, ...) | ✓ | 줄 기반 fallback | — |
 
 **한글 검색 지원** — BM25 토크나이저가 유니코드(`\p{L}`)를 지원해 한글 주석, 문서, 변수명도 키워드 검색 가능. 원본 `semble`은 ASCII만 인식.

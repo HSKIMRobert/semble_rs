@@ -14,6 +14,9 @@ fn get_language(name: &str) -> Option<Language> {
         "c" => tree_sitter_c::LANGUAGE,
         "cpp" => tree_sitter_cpp::LANGUAGE,
         "kotlin" => tree_sitter_kotlin_ng::LANGUAGE,
+        "ruby" => tree_sitter_ruby::LANGUAGE,
+        "php" => tree_sitter_php::LANGUAGE_PHP,
+        "swift" => tree_sitter_swift::LANGUAGE,
         _ => return None,
     };
     Some(Language::from(lang_fn))
@@ -441,6 +444,60 @@ fn extract_symbol_from_node(source: &str, language: &str, node: &Node) -> Option
             ),
             _ => return None,
         },
+        "ruby" => match kind {
+            "method" => ("method", find_child_text(source, node, "name")?),
+            "singleton_method" => ("singleton_method", find_child_text(source, node, "name")?),
+            "class" => ("class", find_child_text(source, node, "name")?),
+            "module" => ("module", find_child_text(source, node, "name")?),
+            _ => return None,
+        },
+        "php" => match kind {
+            "function_definition" => ("function", find_child_text(source, node, "name")?),
+            "method_declaration" => ("method", find_child_text(source, node, "name")?),
+            "class_declaration" => ("class", find_child_text(source, node, "name")?),
+            "interface_declaration" => ("interface", find_child_text(source, node, "name")?),
+            "trait_declaration" => ("trait", find_child_text(source, node, "name")?),
+            "enum_declaration" => ("enum", find_child_text(source, node, "name")?),
+            _ => return None,
+        },
+        "swift" => match kind {
+            "function_declaration" => (
+                "function",
+                find_child_text(source, node, "name")
+                    .or_else(|| find_child_by_kind(source, node, "simple_identifier"))?,
+            ),
+            "class_declaration" => (
+                "class",
+                find_child_text(source, node, "name")
+                    .or_else(|| find_child_by_kind(source, node, "type_identifier"))?,
+            ),
+            "struct_declaration" => (
+                "struct",
+                find_child_text(source, node, "name")
+                    .or_else(|| find_child_by_kind(source, node, "type_identifier"))?,
+            ),
+            "protocol_declaration" => (
+                "protocol",
+                find_child_text(source, node, "name")
+                    .or_else(|| find_child_by_kind(source, node, "type_identifier"))?,
+            ),
+            "enum_declaration" => (
+                "enum",
+                find_child_text(source, node, "name")
+                    .or_else(|| find_child_by_kind(source, node, "type_identifier"))?,
+            ),
+            "extension_declaration" => (
+                "extension",
+                find_child_text(source, node, "name")
+                    .or_else(|| find_child_by_kind(source, node, "type_identifier"))?,
+            ),
+            "typealias_declaration" => (
+                "type_alias",
+                find_child_text(source, node, "name")
+                    .or_else(|| find_child_by_kind(source, node, "type_identifier"))?,
+            ),
+            _ => return None,
+        },
         _ => return None,
     };
 
@@ -528,11 +585,109 @@ fn extract_imports(source: &str, language: &str, root: &Node) -> Vec<String> {
                     }
                 }
             }
+            "ruby" => {
+                // `require "foo"` / `require_relative "foo"` / `load "foo.rb"` appear
+                // as a `call` whose method name is one of those identifiers and whose
+                // first argument is a string literal. We only emit `require_relative`
+                // and `load` paths since they map to local files; bare `require`
+                // hits gems and we can't tell those apart from local module names.
+                if child.kind() == "call" {
+                    if let Some(path) = extract_ruby_require(source, &child) {
+                        imports.push(path);
+                    }
+                }
+            }
+            "php" => match child.kind() {
+                "namespace_use_declaration" => {
+                    extract_php_use(source, &child, &mut imports);
+                }
+                "expression_statement" => {
+                    // require/include 'foo.php'
+                    if let Some(path) = extract_php_require(source, &child) {
+                        imports.push(path);
+                    }
+                }
+                _ => {}
+            },
+            "swift" => {
+                if child.kind() == "import_declaration" {
+                    let text = node_text(source, &child);
+                    let cleaned = text
+                        .trim_start_matches("import")
+                        .trim()
+                        .trim_end_matches(';')
+                        .trim();
+                    if !cleaned.is_empty() {
+                        imports.push(cleaned.to_string());
+                    }
+                }
+            }
             _ => {}
         }
     }
 
     imports
+}
+
+fn extract_ruby_require(source: &str, call_node: &Node) -> Option<String> {
+    let method = call_node.child_by_field_name("method")?;
+    let m_name = node_text(source, &method);
+    if m_name != "require_relative" && m_name != "load" {
+        return None;
+    }
+    let args = call_node.child_by_field_name("arguments")?;
+    let mut cursor = args.walk();
+    for arg in args.children(&mut cursor) {
+        if arg.kind() == "string" {
+            let s = node_text(source, &arg);
+            let cleaned = s.trim_matches(|c| c == '\'' || c == '"').trim();
+            if !cleaned.is_empty() {
+                return Some(cleaned.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn extract_php_use(source: &str, node: &Node, imports: &mut Vec<String>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "namespace_use_clause" {
+            if let Some(name) =
+                find_child_by_kind(source, &child, "qualified_name").or_else(|| {
+                    find_child_by_kind(source, &child, "name")
+                })
+            {
+                imports.push(name);
+            }
+        } else if child.kind() == "qualified_name" || child.kind() == "name" {
+            imports.push(node_text(source, &child));
+        }
+    }
+}
+
+fn extract_php_require(source: &str, expr_stmt: &Node) -> Option<String> {
+    let mut cursor = expr_stmt.walk();
+    for child in expr_stmt.children(&mut cursor) {
+        let kind = child.kind();
+        if kind == "require_expression"
+            || kind == "require_once_expression"
+            || kind == "include_expression"
+            || kind == "include_once_expression"
+        {
+            let mut inner = child.walk();
+            for sub in child.children(&mut inner) {
+                if sub.kind() == "string" {
+                    let s = node_text(source, &sub);
+                    let cleaned = s.trim_matches(|c| c == '\'' || c == '"').trim();
+                    if !cleaned.is_empty() {
+                        return Some(cleaned.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn extract_package(source: &str, language: &str, root: &Node) -> Option<String> {
@@ -1411,5 +1566,61 @@ typealias UserName = String
 
         let node = graph.files.get("app/main.py").unwrap();
         assert_eq!(node.depends_on, vec!["app/helpers.py".to_string()]);
+    }
+
+    #[test]
+    fn test_ruby_symbols_and_require_relative() {
+        let mut graph = DependencyGraph::new();
+        graph.add_file(
+            "app/main.rb",
+            "require_relative 'helpers'\n\nclass Greeter\nend\n\ndef standalone\n  42\nend\n",
+            "ruby",
+        );
+        graph.add_file("app/helpers.rb", "module Helpers\nend\n", "ruby");
+        graph.resolve_dependencies();
+
+        let main = graph.files.get("app/main.rb").unwrap();
+        let names: Vec<&str> = main.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"Greeter"), "missing class: {names:?}");
+        assert!(names.contains(&"standalone"), "missing top-level method: {names:?}");
+        assert_eq!(main.depends_on, vec!["app/helpers.rb".to_string()]);
+    }
+
+    #[test]
+    fn test_php_symbols_and_namespace_use() {
+        let mut graph = DependencyGraph::new();
+        graph.add_file(
+            "src/Controller/UserController.php",
+            "<?php\nnamespace App\\Controller;\n\nuse App\\Service\\Auth;\n\nclass UserController {\n}\n\nfunction helper() { return 1; }\n",
+            "php",
+        );
+        graph.add_file(
+            "src/Service/Auth.php",
+            "<?php\nnamespace App\\Service;\n\nclass Auth {}\n",
+            "php",
+        );
+        graph.resolve_dependencies();
+
+        let ctrl = graph.files.get("src/Controller/UserController.php").unwrap();
+        let names: Vec<&str> = ctrl.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"UserController"), "missing class: {names:?}");
+        assert!(names.contains(&"helper"), "missing top-level function: {names:?}");
+    }
+
+    #[test]
+    fn test_swift_symbols() {
+        let mut graph = DependencyGraph::new();
+        graph.add_file(
+            "Sources/App/Greeter.swift",
+            "import Foundation\n\nstruct User { let name: String }\n\nclass Greeter {\n}\n\nfunc standalone() -> Int { return 42 }\n",
+            "swift",
+        );
+        graph.resolve_dependencies();
+
+        let f = graph.files.get("Sources/App/Greeter.swift").unwrap();
+        let names: Vec<&str> = f.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"User"), "missing struct: {names:?}");
+        assert!(names.contains(&"Greeter"), "missing class: {names:?}");
+        assert!(names.contains(&"standalone"), "missing top-level func: {names:?}");
     }
 }
