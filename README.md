@@ -401,6 +401,12 @@ semble_rs search "query" ./my-project --compact
 semble_rs search "deletePage" ./my-project --compact
 semble_rs search "handleImageUpload" ./my-project --compact
 
+# 1단계 탐색 — 시그니처만 (가장 적은 토큰, v0.2.0+)
+semble_rs search "auth flow" ./my-project --outline
+
+# 안전한 절감 — 매칭 라인 청크당 3개 + 디렉토리 그룹핑 (v0.2.0+)
+semble_rs search "payment processing" ./my-project --group
+
 # 의존성 확인 — 심볼, 의존 파일, 사용처
 semble_rs deps src/lib/firestore.ts ./my-project
 
@@ -413,6 +419,23 @@ semble_rs find-related src/search.rs 91 .
 # 토큰 절약 통계
 semble_rs savings
 ```
+
+### 출력 모드 선택 가이드 (v0.2.0+)
+
+| 모드 | 출력 예 | 33개 쿼리 절감 | 언제 쓰나 |
+|---|---|---|---|
+| `--outline` | `score path:start-end [Nm]` + 시그니처 1줄 | **-47%** | **1단계 탐색** — 어떤 함수/타입이 있는지만 알면 될 때 |
+| `--group` | 디렉토리 그룹핑 + 매칭 라인 최대 3개 (`+N` 표시) | -47% | **안전한 절감** — 정보 손실 최소화하며 토큰 줄이고 싶을 때 |
+| `--compact` | 점수 + 경로 + 모든 매칭 라인 | 0% (baseline) | **정밀 탐색** — 매칭 라인 전부 필요할 때 |
+| `--json --strip` | 청크 내용 (주석 제거 + 본문 축약) | +800% | 청크 본문 자체가 필요할 때 |
+| `--json` | 청크 내용 (원본) | +900% | 통합 도구용 |
+
+`--outline` 시그니처 정확도: 33개 쿼리 313개 시그니처 중 **100% well-formed** (잘림 없음, paren 균형, 적절한 종결자).
+
+권장 워크플로:
+1. **`--outline`으로 시작** — 전체 구조 파악
+2. 필요한 청크 식별 후 **`--compact`로 좁혀 탐색** — 매칭 라인 컨텍스트 확인
+3. 본문 자체가 필요하면 **`--json --strip`**
 
 ## Claude Code / Codex Integration
 
@@ -864,6 +887,12 @@ semble_rs search "query" ./my-project --compact
 semble_rs search "deletePage" ./my-project --compact
 semble_rs search "handleImageUpload" ./my-project --compact
 
+# First-pass scan — one signature per chunk, smallest token footprint (v0.2.0+)
+semble_rs search "auth flow" ./my-project --outline
+
+# Safe savings — match lines capped at 3/chunk + directory grouping (v0.2.0+)
+semble_rs search "payment processing" ./my-project --group
+
 # Dependencies — defined symbols, imports, callers
 semble_rs deps src/lib/firestore.ts ./my-project
 
@@ -876,6 +905,24 @@ semble_rs find-related src/search.rs 91 .
 # Cumulative token-savings stats
 semble_rs savings
 ```
+
+#### Output mode selection guide (v0.2.0+)
+
+| Mode | Output | 33-query savings | When to use |
+|---|---|---|---|
+| `--outline` | `score path:start-end [Nm]` + one signature line | **-47%** | **First-pass scan** — you only need to know which functions / types exist |
+| `--group` | Directory grouping + match lines capped at 3 (`+N` overflow) | -47% | **Safe savings** — keep most information while cutting tokens |
+| `--compact` | Score + path + every matching line | 0% (baseline) | **Precision scan** — when you need every matching line |
+| `--json --strip` | Chunk bodies (comments stripped, content trimmed) | +800% | When the chunk body itself is what you need |
+| `--json` | Chunk bodies (raw) | +900% | Tool / pipeline integration |
+
+Outline accuracy on the 33-query benchmark: **100% well-formed signatures** (no truncation, parens balanced, proper terminators).
+
+Recommended workflow:
+
+1. **Start with `--outline`** — get the structural overview
+2. After picking targets, **narrow down with `--compact`** for matching-line context
+3. If the body itself is required, use **`--json --strip`**
 
 ### Integration with Claude Code, Codex, Cursor, Aider, OpenHands
 

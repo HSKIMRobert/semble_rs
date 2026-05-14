@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 
 use semble::filter::smart_strip;
 use semble::index::SembleIndex;
+use semble::outline::extract_signature_near;
 use semble::stats::format_savings_report;
 use semble::types::SearchResult;
 use semble::utils::{format_results, is_git_url, resolve_chunk};
@@ -39,6 +40,12 @@ enum Commands {
         /// Strip comments from code chunks in JSON output to reduce tokens
         #[arg(long)]
         strip: bool,
+        /// Outline output: one signature line per chunk (smallest token footprint)
+        #[arg(long)]
+        outline: bool,
+        /// Group results by directory + cap match lines at 3 per chunk
+        #[arg(long)]
+        group: bool,
     },
     /// Find code similar to a specific location
     FindRelated {
@@ -180,11 +187,17 @@ fn main() {
             json,
             compact,
             strip,
+            outline,
+            group,
         } => {
             let index = build_index(&path, include_text_files);
 
             let results = index.search(query.as_str(), top_k, None, None, None);
-            if compact {
+            if outline {
+                print_outline(&results);
+            } else if group {
+                print_grouped(&results);
+            } else if compact {
                 print_compact(&results);
             } else if json && strip {
                 print_json_stripped(&results);
@@ -246,6 +259,77 @@ fn print_compact(results: &[SearchResult]) {
         );
         for ml in &r.match_lines {
             println!("  L{}:\t{}", ml.line, truncate_line(&ml.content, 120));
+        }
+    }
+}
+
+fn print_outline(results: &[SearchResult]) {
+    for r in results {
+        let match_nums: Vec<usize> = r.match_lines.iter().map(|m| m.line).collect();
+        let sig = extract_signature_near(&r.chunk.content, r.chunk.start_line, &match_nums)
+            .unwrap_or_else(|| format!("(lines {}-{})", r.chunk.start_line, r.chunk.end_line));
+        let match_suffix = if r.match_lines.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}m]", r.match_lines.len())
+        };
+        println!(
+            "{:.4} {}:{}-{}{}\n  {}",
+            r.score,
+            r.chunk.file_path,
+            r.chunk.start_line,
+            r.chunk.end_line,
+            match_suffix,
+            sig
+        );
+    }
+}
+
+fn print_grouped(results: &[SearchResult]) {
+    use std::collections::BTreeMap;
+    let mut by_dir: BTreeMap<String, (f64, Vec<&SearchResult>)> = BTreeMap::new();
+    for r in results {
+        let dir = std::path::Path::new(&r.chunk.file_path)
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or("")
+            .to_string();
+        let entry = by_dir.entry(dir).or_insert((f64::NEG_INFINITY, Vec::new()));
+        if r.score > entry.0 {
+            entry.0 = r.score;
+        }
+        entry.1.push(r);
+    }
+    let mut dirs: Vec<(&String, &(f64, Vec<&SearchResult>))> = by_dir.iter().collect();
+    dirs.sort_by(|a, b| b.1.0.partial_cmp(&a.1.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    const MAX_MATCH_LINES: usize = 3;
+    for (dir, (_, group)) in dirs {
+        let has_dir = !dir.is_empty();
+        if has_dir {
+            println!("{dir}/");
+        }
+        for r in group {
+            let fname = std::path::Path::new(&r.chunk.file_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(r.chunk.file_path.as_str());
+            let indent = if has_dir { "  " } else { "" };
+            println!(
+                "{indent}{:.4} {fname}:{}-{}",
+                r.score, r.chunk.start_line, r.chunk.end_line
+            );
+            let total = r.match_lines.len();
+            for ml in r.match_lines.iter().take(MAX_MATCH_LINES) {
+                println!(
+                    "{indent}  L{}: {}",
+                    ml.line,
+                    truncate_line(&ml.content, 100)
+                );
+            }
+            if total > MAX_MATCH_LINES {
+                println!("{indent}  ... (+{})", total - MAX_MATCH_LINES);
+            }
         }
     }
 }
