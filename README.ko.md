@@ -20,7 +20,7 @@ AI 에이전트가 토큰을 폭발시키는 두 영역을 모두 잠급니다:
 
 | 단계 | `semble_rs` 없이 | `semble_rs`로 | 절감 |
 |---|---|---|---|
-| 코드 찾기 | `ls` → `grep` → `cat 파일₁` → `cat 파일₂` → … | `semble_rs search "auth flow" . --outline` | **-93%** 평균 세션 |
+| 코드 찾기 | `ls` → `grep` → `cat 파일₁` → `cat 파일₂` → … | `semble_rs search "auth flow" . --outline` | 불필요한 탐색 읽기 크게 감소 |
 | CI 실패 디버깅 | `gh run view <id> --log-failed` (3.3 MB raw) | `gh run view … \| semble_rs digest` (35 KB) | **-98.9%** |
 
 단일 Rust 바이너리, 런타임 의존성 없음. [MinishLab/semble](https://github.com/MinishLab/semble)의 Rust 재작성 + 의존성 그래프 + AST 청킹 + 한글/CJK 유니코드 검색 + 출력 압축 파이프라인.
@@ -39,6 +39,7 @@ cargo install --path .
 
 ```bash
 # 코드 검색 (grep / cat / read / ls 대체)
+semble_rs plan "인증 플로우 버그 수정" ./my-project -k 5 # 선택: 최소 탐색 흐름 추천
 semble_rs search "인증 플로우" ./my-project --outline    # 1단계: 구조 파악
 semble_rs search "loginWithEmail" ./my-project --compact # 2단계: 매칭 라인 확인
 
@@ -63,6 +64,12 @@ gh run view <id> --log-failed | semble_rs digest
 | `--json` | 청크 본문 (원본) | +900% | 도구 통합 |
 
 **권장 워크플로:** `--outline` 개관 → `--compact` 좁히기 → 본문이 필요할 때만 `--json --strip`.
+
+에이전트 세션에서는 첫 검색 전에 `semble_rs plan "<task>" /path -k 5`를 사용할 수 있습니다. 작은 검색을 먼저 돌려 후보 파일/청크와 다음 `--outline`, `--group`, `--compact`, `deps`, `impact` 명령을 제안하므로 에이전트가 바로 전체 파일 읽기로 새는 것을 줄입니다.
+
+`plan`은 정답기가 아니라 가드레일입니다. 애매한 작업, 처음 보는 저장소, “어디부터 봐야 하지?” 상황에서 유용합니다. `Confidence: low`가 나오면 후보를 사실이 아니라 단서로 보고 자연어 쿼리를 넓히세요. 이미 기능명/심볼명을 알고 있으면 바로 `search --outline` / `search --compact`로 가는 편이 더 작습니다.
+
+**절감률 메모:** 개별 명령의 출력 크기는 직접 측정할 수 있습니다. `--outline`은 기본 검색보다 훨씬 작고, `digest`는 위 GitHub Actions fixture에서 98.9% 절감됩니다. 전체 에이전트 세션 절감률은 에이전트가 실제로 전체 파일 읽기와 raw 로그를 피했는지에 따라 달라지므로 고정 수치로 말하지 말고 워크플로별로 벤치마크해야 합니다.
 
 `--outline` 시그니처 정확도 (33쿼리 자체 벤치마크): **100% well-formed** (paren 균형, 잘림 없음).
 
@@ -130,6 +137,7 @@ semble_rs digest --show-format my_log.txt
 
 코드 탐색 시 raw grep/cat/find/read 대신 이걸 사용:
 
+  semble_rs plan   "<task>"    /path             # 선택 0단계: 탐색 계획 + 후보 파일
   semble_rs search "<feature>" /path --outline      # 1단계 탐색
   semble_rs search "<symbol>"  /path --compact      # 2단계 정밀 탐색
   semble_rs deps   <file>      /path
@@ -144,7 +152,9 @@ semble_rs digest --show-format my_log.txt
   gh run view <id> --log-failed | semble_rs digest
 
 규칙: 심볼명을 추측하지 말고 자연어로 기능 설명, 디렉토리 경로를 넘기기
-(파일 경로 X), semble_rs 결과로 부족할 때만 `grep`으로 보충.
+(파일 경로 X), `plan`의 low-confidence 후보는 사실이 아니라 단서로 보기,
+초반에는 `--json`/전체 파일 읽기를 피하기, semble_rs 결과로 부족할 때만
+`grep`으로 보충.
 ```
 
 ### 프로젝트 단위 (모든 에이전트)

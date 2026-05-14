@@ -34,7 +34,7 @@ AI agents burn tokens two ways:
 
 | Stage | Without `semble_rs` | With `semble_rs` | Savings |
 |---|---|---|---|
-| Code lookup | `ls` → `grep` → `cat file₁` → `cat file₂` → … | `semble_rs search "auth flow" . --outline` | **-93%** typical session |
+| Code lookup | `ls` → `grep` → `cat file₁` → `cat file₂` → … | `semble_rs search "auth flow" . --outline` | large reduction in exploratory reads |
 | CI failure debug | `gh run view <id> --log-failed` (3.3 MB raw) | `gh run view … \| semble_rs digest` (35 KB) | **-98.9%** |
 
 It is a single Rust binary, no runtime dependencies, with a Rust rewrite of [MinishLab/semble](https://github.com/MinishLab/semble) at its core plus dependency graphs, AST chunking, Korean/CJK Unicode search, and an output-digest pipeline.
@@ -53,6 +53,7 @@ The binary lands at `~/.cargo/bin/semble_rs`. On first run, the default embeddin
 
 ```bash
 # Code search (replaces grep / cat / read / ls)
+semble_rs plan "fix auth flow bug" ./my-project -k 5       # optional: recommend a minimal exploration flow
 semble_rs search "auth flow" ./my-project --outline      # pass 1: structural overview
 semble_rs search "loginWithEmail" ./my-project --compact # pass 2: matching lines
 
@@ -77,6 +78,12 @@ gh run view <id> --log-failed | semble_rs digest
 | `--json` | Chunk bodies (raw) | +900% | Tooling / pipeline integration |
 
 **Recommended:** `--outline` to overview → `--compact` to narrow → `--json --strip` only if the chunk body itself is needed.
+
+For agent sessions, `semble_rs plan "<task>" /path -k 5` can be used before the first search. It runs a small search, ranks likely files/chunks, and prints the next `--outline`, `--group`, `--compact`, `deps`, and `impact` commands so the agent does not wander into full-file reads.
+
+`plan` is a guardrail, not an oracle: it is useful for ambiguous tasks, new repositories, and “where should I start?” moments. If it reports low confidence, treat candidates as leads and broaden the natural-language query. If you already know the feature or symbol, go straight to `search --outline` / `search --compact`.
+
+**Savings note:** individual commands are measured directly (`--outline` is often much smaller than default search output, and `digest` reaches 98.9% on the GitHub Actions fixture above). Whole-session savings depend on whether the agent actually avoids full-file reads and raw logs, so they should be benchmarked per workflow rather than quoted as a fixed number.
 
 `--outline` accuracy on the 33-query self-benchmark: **100% well-formed** signatures (parens balanced, no truncation).
 
@@ -142,6 +149,7 @@ Drop a section like the following into `~/.claude/CLAUDE.md` and `~/.codex/AGENT
 
 ALWAYS use these instead of raw grep/cat/find/read:
 
+  semble_rs plan   "<task>"    /path             # optional 0: plan + candidate files
   semble_rs search "<feature>" /path --outline      # 1단계 탐색
   semble_rs search "<symbol>"  /path --compact      # 2단계 정밀 탐색
   semble_rs deps   <file>      /path
@@ -157,7 +165,9 @@ ALWAYS pipe build / test / CI output through `semble_rs digest`:
 
 Rules: never guess symbol names (use natural-language descriptions instead),
 always pass a directory path (not a file path), and only fall back to `grep`
-when semble_rs results are insufficient.
+when semble_rs results are insufficient. Treat low-confidence `plan` output as
+leads, not facts. Do not use `--json` or open whole files unless the compact
+results are not enough.
 ```
 
 ### Per-project (any agent)

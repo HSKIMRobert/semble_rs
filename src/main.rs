@@ -7,6 +7,7 @@ use semble::digest::{self, Format};
 use semble::filter::smart_strip;
 use semble::index::SembleIndex;
 use semble::outline::extract_signature_near;
+use semble::plan::{build_plan, print_plan};
 use semble::stats::format_savings_report;
 use semble::types::SearchResult;
 use semble::utils::{format_results, is_git_url, resolve_chunk};
@@ -90,6 +91,23 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Recommend a token-efficient exploration flow for a task
+    Plan {
+        /// Natural-language task or feature to investigate
+        task: String,
+        /// Local path or git URL (default: current directory)
+        #[arg(default_value = ".")]
+        path: String,
+        /// Number of candidate chunks to use
+        #[arg(short = 'k', long = "top-k", default_value = "8")]
+        top_k: usize,
+        /// Also index non-code text files (.md, .yaml, .json, etc.)
+        #[arg(long)]
+        include_text_files: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Show token savings and usage stats
     Savings {
         /// Show usage breakdown by call type
@@ -162,7 +180,10 @@ fn main() {
             if json {
                 match graph.deps(&file_path) {
                     Some(node) => {
-                        println!("{}", serde_json::to_string(node).unwrap_or_else(|_| "{}".to_string()));
+                        println!(
+                            "{}",
+                            serde_json::to_string(node).unwrap_or_else(|_| "{}".to_string())
+                        );
                     }
                     None => {
                         println!("{{}}");
@@ -194,7 +215,10 @@ fn main() {
                                 println!("  {dep}");
                             }
                         }
-                        if node.symbols.is_empty() && node.depends_on.is_empty() && dependents.is_empty() {
+                        if node.symbols.is_empty()
+                            && node.depends_on.is_empty()
+                            && dependents.is_empty()
+                        {
                             println!("No dependencies or symbols found.");
                         }
                     }
@@ -215,7 +239,10 @@ fn main() {
             let affected = graph.impact(&file_path);
 
             if json {
-                println!("{}", serde_json::to_string(&affected).unwrap_or_else(|_| "[]".to_string()));
+                println!(
+                    "{}",
+                    serde_json::to_string(&affected).unwrap_or_else(|_| "[]".to_string())
+                );
             } else if affected.is_empty() {
                 println!("No files affected by changes to {file_path}.");
             } else {
@@ -224,6 +251,26 @@ fn main() {
                 for f in &affected {
                     println!("  {f}");
                 }
+            }
+        }
+        Commands::Plan {
+            task,
+            path,
+            top_k,
+            include_text_files,
+            json,
+        } => {
+            let index = build_index(&path, include_text_files);
+            let results = index.search(task.as_str(), top_k, None, None, None);
+            let report = build_plan(&task, &path, top_k, &results);
+
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string())
+                );
+            } else {
+                print_plan(&report);
             }
         }
         Commands::Search {
@@ -255,10 +302,7 @@ fn main() {
             } else {
                 println!(
                     "{}",
-                    format_results(
-                        &format!("Search results for: {query:?}"),
-                        &results
-                    )
+                    format_results(&format!("Search results for: {query:?}"), &results)
                 );
             }
         }
@@ -288,10 +332,7 @@ fn main() {
             } else {
                 println!(
                     "{}",
-                    format_results(
-                        &format!("Chunks related to {file_path}:{line}"),
-                        &results
-                    )
+                    format_results(&format!("Chunks related to {file_path}:{line}"), &results)
                 );
             }
         }
@@ -322,12 +363,7 @@ fn print_outline(results: &[SearchResult]) {
         };
         println!(
             "{:.4} {}:{}-{}{}\n  {}",
-            r.score,
-            r.chunk.file_path,
-            r.chunk.start_line,
-            r.chunk.end_line,
-            match_suffix,
-            sig
+            r.score, r.chunk.file_path, r.chunk.start_line, r.chunk.end_line, match_suffix, sig
         );
     }
 }
@@ -348,7 +384,11 @@ fn print_grouped(results: &[SearchResult]) {
         entry.1.push(r);
     }
     let mut dirs: Vec<(&String, &(f64, Vec<&SearchResult>))> = by_dir.iter().collect();
-    dirs.sort_by(|a, b| b.1.0.partial_cmp(&a.1.0).unwrap_or(std::cmp::Ordering::Equal));
+    dirs.sort_by(|a, b| {
+        b.1 .0
+            .partial_cmp(&a.1 .0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     const MAX_MATCH_LINES: usize = 3;
     for (dir, (_, group)) in dirs {
@@ -408,11 +448,17 @@ fn print_json_stripped(results: &[SearchResult]) {
             }
         })
         .collect();
-    println!("{}", serde_json::to_string(&stripped).unwrap_or_else(|_| "[]".to_string()));
+    println!(
+        "{}",
+        serde_json::to_string(&stripped).unwrap_or_else(|_| "[]".to_string())
+    );
 }
 
 fn print_json(results: &[SearchResult]) {
-    println!("{}", serde_json::to_string(results).unwrap_or_else(|_| "[]".to_string()));
+    println!(
+        "{}",
+        serde_json::to_string(results).unwrap_or_else(|_| "[]".to_string())
+    );
 }
 
 fn build_index(path: &str, include_text_files: bool) -> SembleIndex {
