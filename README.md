@@ -136,6 +136,27 @@ semble_rs digest --show-format my_log.txt
 - Repeated error codes are grouped (e.g. `TS2322` × 9 → top 3 + `+6 more`).
 - CI `##[group]` blocks: successful groups collapse to one line; failed groups keep their trailing 80 lines verbatim.
 
+## How does `semble_rs` compare to existing tools?
+
+| Need | `ripgrep` | `ast-grep` | IDE/agent built-in search (Cursor, etc.) | **`semble_rs`** |
+|---|---|---|---|---|
+| Exact symbol / regex grep | **★ fastest** | ✓ via patterns | ✓ | ✓ (hybrid) |
+| Natural-language query ("where do we strip ANSI") | ✗ | ✗ | partial | **★** |
+| AST structural patterns (`fn $name($$$)`) | ✗ | **★** | ✗ | wraps ast-grep via `find-pattern` |
+| Dependency graph + impact analysis | ✗ | ✗ | partial | **★** |
+| Build / CI log compression | ✗ | ✗ | ✗ | **★ `digest`** |
+| Single binary, no daemon | ✓ | ✓ | ✗ (IDE bound) | ✓ |
+| Korean / CJK indexing | ✓ (byte grep) | partial | varies | ✓ (Unicode BM25) |
+
+`semble_rs` is not a replacement for `ripgrep` when you already know the exact symbol — `ripgrep` is unbeatably fast at raw text. It is a replacement for **the pattern of "agent runs grep → reads several files → repeats"** by collapsing that loop into one hybrid-search call, and adds:
+
+- **`digest`** — collapses 3 MB CI logs to 35 KB (no other tool does this in a generic way),
+- **`deps` / `impact`** — file-level dependency graph with `--dot` Graphviz output (use `… --dot | dot -Tpng > graph.png`),
+- **`plan`** — recommends a token-efficient exploration flow when the agent doesn't know where to start,
+- **`find-pattern`** — thin wrapper around `ast-grep` for structural queries (requires `ast-grep` installed).
+
+Use **`ripgrep`** when you have the exact symbol and just want to list call sites. Use **`ast-grep`** (or `semble_rs find-pattern`) when you need a structural code rewrite. Use **`semble_rs`** when the agent is exploring, the symbol name is unknown, or you want CI/build logs compressed.
+
 ## Supported languages (search)
 
 | Language | Search | AST chunking | Dependency graph |
@@ -149,6 +170,7 @@ semble_rs digest --show-format my_log.txt
 | C / C++ | ✓ | ✓ | ✓ |
 | **Kotlin** (v0.3.0+) | ✓ | ✓ | ✓ |
 | Ruby, PHP, Swift, others | ✓ | line-based fallback | — |
+| **HTML, CSS, SCSS, Vue, Svelte** (v0.6.0+) | ✓ | line-based fallback | — |
 
 ## Integration with AI coding agents
 

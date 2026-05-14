@@ -79,6 +79,9 @@ enum Commands {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+        /// Output as Graphviz DOT (pipe into `dot -Tpng > graph.png`)
+        #[arg(long)]
+        dot: bool,
     },
     /// Show all files affected if a file changes (transitive)
     Impact {
@@ -90,6 +93,24 @@ enum Commands {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+        /// Output as Graphviz DOT
+        #[arg(long)]
+        dot: bool,
+    },
+    /// AST pattern match — wraps `ast-grep` for "find every `fn $name($$$)`"
+    /// style structural queries that semantic search can't express.
+    FindPattern {
+        /// ast-grep pattern, e.g. `"fn $name($$$)"`
+        pattern: String,
+        /// Local path (default: current directory)
+        #[arg(default_value = ".")]
+        path: String,
+        /// Language hint passed to ast-grep (rust, python, javascript, ...)
+        #[arg(long)]
+        lang: Option<String>,
+        /// Compact one-line-per-match output
+        #[arg(long)]
+        compact: bool,
     },
     /// Recommend a token-efficient exploration flow for a task
     Plan {
@@ -166,6 +187,35 @@ fn main() {
             let out = digest::digest(&text, fmt);
             println!("{out}");
         }
+        Commands::FindPattern {
+            pattern,
+            path,
+            lang,
+            compact,
+        } => {
+            // Thin wrapper around `ast-grep` for structural pattern matching.
+            // Falls back to a clear hint if ast-grep isn't installed.
+            let mut cmd = std::process::Command::new("ast-grep");
+            cmd.arg("--pattern").arg(&pattern).arg(&path);
+            if let Some(l) = lang.as_deref() {
+                cmd.arg("--lang").arg(l);
+            }
+            if compact {
+                cmd.arg("--json=stream");
+            }
+            match cmd.spawn() {
+                Ok(mut child) => {
+                    let _ = child.wait();
+                }
+                Err(_) => {
+                    eprintln!(
+                        "ast-grep is not installed. semble_rs find-pattern is a thin wrapper around it.\n\
+                         Install with `brew install ast-grep` or `cargo install ast-grep` and re-run."
+                    );
+                    process::exit(1);
+                }
+            }
+        }
         Commands::Savings { verbose } => {
             print!("{}", format_savings_report(verbose));
         }
@@ -173,10 +223,15 @@ fn main() {
             file_path,
             path,
             json,
+            dot,
         } => {
             let index = build_index(&path, false);
             let graph = index.graph();
 
+            if dot {
+                println!("{}", graph.deps_dot(&file_path));
+                return;
+            }
             if json {
                 match graph.deps(&file_path) {
                     Some(node) => {
@@ -233,9 +288,15 @@ fn main() {
             file_path,
             path,
             json,
+            dot,
         } => {
             let index = build_index(&path, false);
             let graph = index.graph();
+
+            if dot {
+                println!("{}", graph.impact_dot(&file_path));
+                return;
+            }
             let affected = graph.impact(&file_path);
 
             if json {

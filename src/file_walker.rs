@@ -256,6 +256,62 @@ pub fn file_types() -> Vec<(&'static str, FileType)> {
                 category: FileCategory::Document,
             },
         ),
+        (
+            ".html",
+            FileType {
+                language: "html",
+                category: FileCategory::Code,
+            },
+        ),
+        (
+            ".htm",
+            FileType {
+                language: "html",
+                category: FileCategory::Code,
+            },
+        ),
+        (
+            ".vue",
+            FileType {
+                language: "vue",
+                category: FileCategory::Code,
+            },
+        ),
+        (
+            ".svelte",
+            FileType {
+                language: "svelte",
+                category: FileCategory::Code,
+            },
+        ),
+        (
+            ".css",
+            FileType {
+                language: "css",
+                category: FileCategory::Code,
+            },
+        ),
+        (
+            ".scss",
+            FileType {
+                language: "scss",
+                category: FileCategory::Code,
+            },
+        ),
+        (
+            ".sass",
+            FileType {
+                language: "scss",
+                category: FileCategory::Code,
+            },
+        ),
+        (
+            ".less",
+            FileType {
+                language: "css",
+                category: FileCategory::Code,
+            },
+        ),
     ]
 }
 

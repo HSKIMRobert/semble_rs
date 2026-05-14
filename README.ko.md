@@ -116,6 +116,27 @@ semble_rs digest --show-format my_log.txt
 - 반복되는 에러 코드는 그룹화 (예: `TS2322` 9건 → 상위 3건 + `+6 more`)
 - CI `##[group]` 블록: 성공한 블록은 한 줄로 축약, 실패한 블록은 끝 80줄 그대로 보존
 
+## 기존 도구와 비교
+
+| 필요 | `ripgrep` | `ast-grep` | IDE/에이전트 내장 검색 (Cursor 등) | **`semble_rs`** |
+|---|---|---|---|---|
+| 정확 심볼 / regex grep | **★ 가장 빠름** | ✓ pattern 통해 | ✓ | ✓ (hybrid) |
+| 자연어 쿼리 ("ANSI 코드 제거 어디서?") | ✗ | ✗ | 부분 | **★** |
+| AST 구조 패턴 (`fn $name($$$)`) | ✗ | **★** | ✗ | `find-pattern`이 ast-grep wrap |
+| 의존성 그래프 + 영향 분석 | ✗ | ✗ | 부분 | **★** |
+| 빌드 / CI 로그 압축 | ✗ | ✗ | ✗ | **★ `digest`** |
+| 단일 바이너리, daemon 없음 | ✓ | ✓ | ✗ (IDE 종속) | ✓ |
+| 한글 / CJK 인덱싱 | ✓ (byte grep) | 부분 | 도구별 | ✓ (유니코드 BM25) |
+
+`semble_rs`는 **이미 정확한 심볼명을 알 때 `ripgrep`을 대체하지 않습니다** — raw text 매칭은 ripgrep이 압도적으로 빠릅니다. `semble_rs`가 대체하는 것은 **"에이전트가 grep → 여러 파일 read → 반복"하는 패턴**이고, 한 번의 hybrid 검색으로 그 루프를 짧게 만듭니다. 추가로:
+
+- **`digest`** — 3 MB CI log를 35 KB로 압축 (다른 도구에서 일반적으로 못 함)
+- **`deps` / `impact`** — 파일 단위 의존성 그래프, `--dot`로 Graphviz 출력 (`… --dot | dot -Tpng > graph.png`)
+- **`plan`** — 시작점 모를 때 토큰 효율적 탐색 흐름 추천
+- **`find-pattern`** — `ast-grep` 얇은 wrapper (구조 패턴 쿼리, `ast-grep` 설치 필요)
+
+**`ripgrep`을 쓸 때**: 정확한 심볼명을 알고 호출처만 나열하고 싶을 때. **`ast-grep`** (또는 `semble_rs find-pattern`): 구조적 코드 재작성. **`semble_rs`**: 에이전트가 탐색 중이거나 심볼명 모르거나 CI/빌드 로그 압축이 필요할 때.
+
 ## 지원 언어 (검색)
 
 | 언어 | 검색 | AST 청킹 | 의존성 그래프 |
@@ -129,6 +150,7 @@ semble_rs digest --show-format my_log.txt
 | C / C++ | ✓ | ✓ | ✓ |
 | **Kotlin** (v0.3.0+) | ✓ | ✓ | ✓ |
 | Ruby, PHP, Swift, 기타 | ✓ | 줄 기반 fallback | — |
+| **HTML, CSS, SCSS, Vue, Svelte** (v0.6.0+) | ✓ | 줄 기반 fallback | — |
 
 **한글 검색 지원** — BM25 토크나이저가 유니코드(`\p{L}`)를 지원해 한글 주석, 문서, 변수명도 키워드 검색 가능. 원본 `semble`은 ASCII만 인식.
 

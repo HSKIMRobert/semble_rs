@@ -178,6 +178,57 @@ impl DependencyGraph {
         result
     }
 
+    /// Emit `deps` as a Graphviz DOT graph: the file and its direct importers + direct
+    /// imports. Pipe into `dot -Tpng > graph.png` for a rendered image.
+    pub fn deps_dot(&self, file_path: &str) -> String {
+        let mut edges: Vec<(String, String)> = Vec::new();
+        if let Some(node) = self.files.get(file_path) {
+            for dep in &node.depends_on {
+                edges.push((file_path.to_string(), dep.clone()));
+            }
+        }
+        for importer in self.dependents(file_path) {
+            edges.push((importer.to_string(), file_path.to_string()));
+        }
+        emit_dot(&format!("deps:{file_path}"), &edges, &[file_path])
+    }
+
+    /// Emit `impact` as a DOT graph: the file + every transitive dependent.
+    pub fn impact_dot(&self, file_path: &str) -> String {
+        let affected = self.impact(file_path);
+        let mut edges: Vec<(String, String)> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        seen.insert(file_path.to_string());
+        for f in &affected {
+            seen.insert(f.clone());
+        }
+
+        let mut queue: VecDeque<String> = VecDeque::new();
+        queue.push_back(file_path.to_string());
+        let mut visited: HashSet<String> = HashSet::new();
+        visited.insert(file_path.to_string());
+        while let Some(current) = queue.pop_front() {
+            if let Some(deps) = self.reverse.get(&current) {
+                for dep in deps {
+                    if seen.contains(dep) {
+                        edges.push((dep.clone(), current.clone()));
+                        if visited.insert(dep.clone()) {
+                            queue.push_back(dep.clone());
+                        }
+                    }
+                }
+            }
+        }
+        emit_dot(&format!("impact:{file_path}"), &edges, &[file_path])
+    }
+
+    /// All files known to the graph (sorted).
+    pub fn all_files(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.files.keys().cloned().collect();
+        v.sort();
+        v
+    }
+
     pub fn orphans(&self) -> Vec<OrphanFile> {
         let mut results = Vec::new();
         for (fp, node) in &self.files {
@@ -931,6 +982,43 @@ fn find_closest_with_stem(
 
 fn common_prefix_len(a: &str, b: &str) -> usize {
     a.chars().zip(b.chars()).take_while(|(x, y)| x == y).count()
+}
+
+/// Emit a Graphviz DOT graph from a list of edges + a set of "highlighted"
+/// nodes (drawn bold/filled).
+fn emit_dot(title: &str, edges: &[(String, String)], highlight: &[&str]) -> String {
+    let mut nodes: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for (a, b) in edges {
+        nodes.insert(a.clone());
+        nodes.insert(b.clone());
+    }
+    let mut out = String::new();
+    out.push_str(&format!(
+        "digraph \"{}\" {{\n",
+        title.replace('"', "\\\"")
+    ));
+    out.push_str("  rankdir=LR;\n");
+    out.push_str("  node [shape=box, fontname=\"Helvetica\"];\n");
+    let hi: std::collections::HashSet<&str> = highlight.iter().copied().collect();
+    for n in &nodes {
+        let esc = n.replace('"', "\\\"");
+        if hi.contains(n.as_str()) {
+            out.push_str(&format!(
+                "  \"{esc}\" [style=filled, fillcolor=\"#ffeaa7\", penwidth=2];\n"
+            ));
+        } else {
+            out.push_str(&format!("  \"{esc}\";\n"));
+        }
+    }
+    for (a, b) in edges {
+        out.push_str(&format!(
+            "  \"{}\" -> \"{}\";\n",
+            a.replace('"', "\\\""),
+            b.replace('"', "\\\"")
+        ));
+    }
+    out.push_str("}\n");
+    out
 }
 
 #[cfg(test)]
