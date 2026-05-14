@@ -361,10 +361,68 @@ pub fn walk_files(
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             let dot_ext = format!(".{}", ext.to_lowercase());
             if extensions.contains(&dot_ext) {
+                if is_likely_minified(path) {
+                    continue;
+                }
                 files.push(path.to_path_buf());
             }
         }
     }
 
     files
+}
+
+/// Heuristic to skip minified / bundled assets that pollute search results.
+/// Filename-pattern only: `.min.js`, `.min.css`, `.bundle.js`, etc.
+pub fn is_likely_minified(path: &Path) -> bool {
+    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+        let lower = name.to_lowercase();
+        for pat in MINIFIED_FILENAME_PATTERNS {
+            if lower.contains(pat) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+const MINIFIED_FILENAME_PATTERNS: &[&str] = &[
+    ".min.js",
+    ".min.mjs",
+    ".min.css",
+    ".bundle.js",
+    ".bundle.css",
+    "-min.js",
+    "-min.css",
+    ".prod.js",
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn detects_dot_min_suffix() {
+        assert!(is_likely_minified(&PathBuf::from("vendor.min.js")));
+        assert!(is_likely_minified(&PathBuf::from("a/b/lib.min.css")));
+    }
+
+    #[test]
+    fn detects_bundle_pattern() {
+        assert!(is_likely_minified(&PathBuf::from("app.bundle.js")));
+        assert!(is_likely_minified(&PathBuf::from("dist/styles.bundle.css")));
+    }
+
+    #[test]
+    fn detects_dash_min() {
+        assert!(is_likely_minified(&PathBuf::from("lib-min.js")));
+    }
+
+    #[test]
+    fn skips_normal_source_files() {
+        assert!(!is_likely_minified(&PathBuf::from("normal.js")));
+        assert!(!is_likely_minified(&PathBuf::from("src/main.rs")));
+        assert!(!is_likely_minified(&PathBuf::from("auth.ts")));
+    }
 }
