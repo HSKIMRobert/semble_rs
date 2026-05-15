@@ -11,8 +11,8 @@ semble_rs tree . --symbols                     # step 0: codebase map (replaces 
 semble_rs plan "<task>" . -k 5                 # optional 0.5: ambiguous task / new repo
 semble_rs search "<feature>" . --outline -k 8  # pass 1: structural overview
 semble_rs search "<feature-or-symbol>" . --compact -k 8
-semble_rs deps <file> .
-semble_rs impact <file> .
+semble_rs deps   <file> . --tree   # what file imports (ASCII tree, cycle-aware)
+semble_rs impact <file> . --tree   # who depends on file (reverse tree)
 ```
 
 Start with `tree --symbols` on a new repo — gitignore-aware, ~150 ms. Use `plan` when the starting point is still unclear. Treat `Confidence: low` candidates as leads, not facts. If the feature or symbol is already known, skip `tree`/`plan` and go straight to `search --outline` or `search --compact`.

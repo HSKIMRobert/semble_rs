@@ -136,11 +136,16 @@ gh run view <id> --log-failed | semble_rs digest
 ## 의존성 그래프
 
 ```bash
-semble_rs deps   src/auth.rs ./my-project           # 이 파일이 import / 정의하는 것
+semble_rs deps   src/auth.rs ./my-project                  # 이 파일이 import / 정의하는 것 (flat)
+semble_rs deps   src/auth.rs ./my-project --tree           # transitive import를 ASCII 트리로
+semble_rs deps   src/auth.rs ./my-project --tree --max-depth 3
 semble_rs deps   src/auth.rs ./my-project --dot | dot -Tpng > deps.png
-semble_rs impact src/auth.rs ./my-project           # 변경 시 transitive 영향
+semble_rs impact src/auth.rs ./my-project                  # 누가 이 파일을 의존하나 (flat)
+semble_rs impact src/auth.rs ./my-project --tree           # 역방향 의존성 트리
 semble_rs impact src/auth.rs ./my-project --dot | dot -Tpng > impact.png
 ```
+
+`--tree` (v0.9.1+) 옵션은 forward (`deps`) 또는 reverse (`impact`) 의존성을 ASCII 트리로 렌더링합니다. 사이클은 `(cycle)`로 표시되고, `--max-depth N`로 깊이 제한 시 `…`로 잘림을 표시. 외부 도구 불필요, 에이전트 친화적.
 
 `impact`는 공유 모듈을 수정하기 전에 영향 범위를 먼저 파악하기 위한 명령입니다.
 

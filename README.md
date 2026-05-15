@@ -136,11 +136,16 @@ Auto-detection covers cargo, pnpm/npm/yarn/bun, tsc, pytest, go test, gradle, ru
 ## Dependency graph
 
 ```bash
-semble_rs deps   src/auth.rs ./my-project           # what this file imports / defines
+semble_rs deps   src/auth.rs ./my-project                  # what this file imports / defines (flat)
+semble_rs deps   src/auth.rs ./my-project --tree           # transitive imports as ASCII tree
+semble_rs deps   src/auth.rs ./my-project --tree --max-depth 3
 semble_rs deps   src/auth.rs ./my-project --dot | dot -Tpng > deps.png
-semble_rs impact src/auth.rs ./my-project           # transitive: what breaks if I touch it
+semble_rs impact src/auth.rs ./my-project                  # who depends on this file (flat list)
+semble_rs impact src/auth.rs ./my-project --tree           # reverse-dependency tree
 semble_rs impact src/auth.rs ./my-project --dot | dot -Tpng > impact.png
 ```
+
+`--tree` (v0.9.1+) renders forward (`deps`) or reverse (`impact`) dependencies as an ASCII tree with cycle detection (repeated nodes marked `(cycle)`) and `--max-depth N` truncation (`…`). No external tool required, agent-readable.
 
 `impact` is intended to be run before edits to a shared module to avoid surprises.
 
