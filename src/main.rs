@@ -91,6 +91,12 @@ enum Commands {
         /// Output as Graphviz DOT (pipe into `dot -Tpng > graph.png`)
         #[arg(long)]
         dot: bool,
+        /// Output as ASCII dependency tree (transitive imports)
+        #[arg(long)]
+        tree: bool,
+        /// Max tree depth (with --tree)
+        #[arg(long)]
+        max_depth: Option<usize>,
     },
     /// Show all files affected if a file changes (transitive)
     Impact {
@@ -105,6 +111,12 @@ enum Commands {
         /// Output as Graphviz DOT
         #[arg(long)]
         dot: bool,
+        /// Output as ASCII reverse-dependency tree (who depends on this)
+        #[arg(long)]
+        tree: bool,
+        /// Max tree depth (with --tree)
+        #[arg(long)]
+        max_depth: Option<usize>,
     },
     /// AST pattern match — wraps `ast-grep` for "find every `fn $name($$$)`"
     /// style structural queries that semantic search can't express.
@@ -334,12 +346,22 @@ fn main() {
             path,
             json,
             dot,
+            tree,
+            max_depth,
         } => {
             let index = build_index(&path, false, None);
             let graph = index.graph();
 
             if dot {
                 println!("{}", graph.deps_dot(&file_path));
+                return;
+            }
+            if tree {
+                if graph.deps(&file_path).is_none() {
+                    eprintln!("File not found in graph: {file_path}");
+                    process::exit(1);
+                }
+                print!("{}", render_dep_tree(graph, &file_path, max_depth, false));
                 return;
             }
             if json {
@@ -399,12 +421,22 @@ fn main() {
             path,
             json,
             dot,
+            tree,
+            max_depth,
         } => {
             let index = build_index(&path, false, None);
             let graph = index.graph();
 
             if dot {
                 println!("{}", graph.impact_dot(&file_path));
+                return;
+            }
+            if tree {
+                if graph.deps(&file_path).is_none() && graph.dependents(&file_path).is_empty() {
+                    eprintln!("File not found in graph: {file_path}");
+                    process::exit(1);
+                }
+                print!("{}", render_dep_tree(graph, &file_path, max_depth, true));
                 return;
             }
             let affected = graph.impact(&file_path);
@@ -591,6 +623,80 @@ fn print_grouped(results: &[SearchResult]) {
             if total > MAX_MATCH_LINES {
                 println!("{indent}  ... (+{})", total - MAX_MATCH_LINES);
             }
+        }
+    }
+}
+
+fn render_dep_tree(
+    graph: &semble::DependencyGraph,
+    root: &str,
+    max_depth: Option<usize>,
+    reverse: bool,
+) -> String {
+    let mut out = String::new();
+    out.push_str(root);
+    out.push('\n');
+    let mut visited = std::collections::HashSet::new();
+    visited.insert(root.to_string());
+    let children = next_files(graph, root, reverse);
+    let mut prefix = String::new();
+    walk_dep_tree(graph, &children, &mut visited, &mut prefix, &mut out, 1, max_depth, reverse);
+    out
+}
+
+fn next_files(graph: &semble::DependencyGraph, file: &str, reverse: bool) -> Vec<String> {
+    if reverse {
+        graph.dependents(file).into_iter().map(String::from).collect()
+    } else {
+        graph
+            .deps(file)
+            .map(|n| n.depends_on.clone())
+            .unwrap_or_default()
+    }
+}
+
+fn walk_dep_tree(
+    graph: &semble::DependencyGraph,
+    items: &[String],
+    visited: &mut std::collections::HashSet<String>,
+    prefix: &mut String,
+    out: &mut String,
+    depth: usize,
+    max_depth: Option<usize>,
+    reverse: bool,
+) {
+    let last_idx = items.len().saturating_sub(1);
+    for (i, item) in items.iter().enumerate() {
+        let is_last = i == last_idx;
+        let connector = if is_last { "└── " } else { "├── " };
+        out.push_str(prefix);
+        out.push_str(connector);
+        out.push_str(item);
+
+        let cycle = visited.contains(item);
+        if cycle {
+            out.push_str("  (cycle)\n");
+            continue;
+        }
+        let depth_exceeded = max_depth.is_some_and(|m| depth >= m);
+        let children = if depth_exceeded {
+            vec![]
+        } else {
+            next_files(graph, item, reverse)
+        };
+        if depth_exceeded && !next_files(graph, item, reverse).is_empty() {
+            out.push_str("  …\n");
+            continue;
+        }
+        out.push('\n');
+
+        if !children.is_empty() {
+            visited.insert(item.clone());
+            let push = if is_last { "    " } else { "│   " };
+            prefix.push_str(push);
+            walk_dep_tree(graph, &children, visited, prefix, out, depth + 1, max_depth, reverse);
+            prefix.truncate(prefix.len() - push.len());
+            visited.remove(item);
         }
     }
 }

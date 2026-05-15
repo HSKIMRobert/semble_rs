@@ -120,9 +120,7 @@ fn render_node(
             };
             prefix.push_str(push);
             render_node(child, out, prefix, false, depth + 1, graph, opts);
-            for _ in 0..push.len() {
-                prefix.pop();
-            }
+            prefix.truncate(prefix.len() - push.len());
         }
     }
 }
