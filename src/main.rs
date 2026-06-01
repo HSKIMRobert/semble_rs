@@ -15,7 +15,11 @@ use semble::types::SearchResult;
 use semble::utils::{format_results, is_git_url, resolve_chunk};
 
 #[derive(Parser)]
-#[command(name = "semble_rs", about = "Fast and Accurate Code Search for Agents")]
+#[command(
+    name = "semble_rs",
+    version,
+    about = "Fast and Accurate Code Search for Agents"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
